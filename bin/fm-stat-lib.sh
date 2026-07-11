@@ -15,7 +15,7 @@
 [ -n "${FM_STAT_LIB_LOADED:-}" ] && return 0
 FM_STAT_LIB_LOADED=1
 
-if stat -c %Y . >/dev/null 2>&1; then
+if stat -c %Y / >/dev/null 2>&1; then
   # GNU/coreutils stat.
   fm_stat_mtime() { stat -c %Y "$1" 2>/dev/null; }        # epoch seconds of mtime
   fm_stat_sig()   { stat -c '%s:%Y' "$1" 2>/dev/null; }   # size:mtime signature
