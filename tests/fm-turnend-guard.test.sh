@@ -744,6 +744,35 @@ EOF
   pass ".opencode primary plugin: guard path is anchored to worktree, not directory"
 }
 
+# Two of the pi extension tests below dynamically `import` the extension as raw
+# TypeScript via `node --input-type=module` - exactly how Pi loads it. A node
+# runtime without native .ts import support (older than the type-stripping
+# releases, and without --experimental-strip-types) cannot load a .ts module and
+# would fail these tests for a reason unrelated to the extension. Probe the real
+# runtime once (invoked the same way the tests invoke it) so those tests self-skip
+# cleanly on such a host instead of failing; CI and any TS-capable node still run
+# them. The pi-extension-content test needs no probe: it only reads the file text.
+FM_PI_NODE_TS=""  # memoized probe result: "" unprobed, "yes"/"no" once resolved
+node_can_import_ts() {
+  if [ -z "$FM_PI_NODE_TS" ]; then
+    if ! command -v node >/dev/null 2>&1; then
+      FM_PI_NODE_TS=no
+    else
+      local probe_dir
+      probe_dir=$(mktemp -d)
+      printf 'export default 1;\n' > "$probe_dir/probe.ts"
+      if PROBE="$probe_dir/probe.ts" node --input-type=module \
+        -e 'await import(process.env.PROBE)' >/dev/null 2>&1; then
+        FM_PI_NODE_TS=yes
+      else
+        FM_PI_NODE_TS=no
+      fi
+      rm -rf "$probe_dir"
+    fi
+  fi
+  [ "$FM_PI_NODE_TS" = yes ]
+}
+
 test_pi_extension_forces_followup() {
   local ext content
   ext="$ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
@@ -767,6 +796,7 @@ test_pi_extension_forces_followup() {
 
 test_pi_extension_injects_once_per_logical_agent_run() {
   local repo home ext log out status
+  node_can_import_ts || { pass "skip: node cannot import .ts (needs a type-stripping node or --experimental-strip-types); TS-capable node runs this pi extension test"; return; }
   repo="$TMP_ROOT/pi-logical-run-root"
   home="$TMP_ROOT/pi-logical-run-home"
   ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
@@ -829,6 +859,7 @@ EOF
 
 test_pi_extension_retries_after_followup_delivery_failure() {
   local repo home ext out status
+  node_can_import_ts || { pass "skip: node cannot import .ts (needs a type-stripping node or --experimental-strip-types); TS-capable node runs this pi extension test"; return; }
   repo="$TMP_ROOT/pi-delivery-failure-root"
   home="$TMP_ROOT/pi-delivery-failure-home"
   ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
