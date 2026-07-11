@@ -219,16 +219,13 @@ AFK_FLAG_NAME=".afk"
 # classifiers can take an explicit state arg without depending on globals.
 _state_root() { printf '%s' "${FM_STATE_OVERRIDE:-$FM_HOME/state}"; }
 
-# --- portable stat (same trap as fm-watch.sh: no `stat -f || stat -c`) -------
-if [ "$(uname)" = Darwin ]; then
-  _stat_file_mtime() { stat -f %m "$1" 2>/dev/null; }
-else
-  _stat_file_mtime() { stat -c %Y "$1" 2>/dev/null; }
-fi
+# --- portable stat (capability-probed; one owner: bin/fm-stat-lib.sh) --------
+# shellcheck source=bin/fm-stat-lib.sh
+. "$FM_DAEMON_DIR/fm-stat-lib.sh"
 _now() { date +%s; }
 _file_age() {  # seconds since mtime; very large if missing
   local f=$1 m
-  m=$(_stat_file_mtime "$f") || { echo 999999; return; }
+  m=$(fm_stat_mtime "$f") || { echo 999999; return; }
   echo $(( $(_now) - m ))
 }
 

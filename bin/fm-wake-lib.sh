@@ -36,17 +36,13 @@ fm_pid_identity() {
   printf '%s\n' "$out" | sed 's/^[[:space:]]*//'
 }
 
-fm_path_mtime() {
-  if [ "$(uname)" = Darwin ]; then
-    stat -f %m "$1" 2>/dev/null
-  else
-    stat -c %Y "$1" 2>/dev/null
-  fi
-}
+# Portable mtime via capability-probed stat (one owner: bin/fm-stat-lib.sh).
+# shellcheck source=bin/fm-stat-lib.sh
+. "$FM_WAKE_LIB_DIR/fm-stat-lib.sh"
 
 fm_path_age() {
   local path=$1 m
-  m=$(fm_path_mtime "$path") || { echo 999999; return; }
+  m=$(fm_stat_mtime "$path") || { echo 999999; return; }
   echo $(( $(date +%s) - m ))
 }
 

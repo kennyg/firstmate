@@ -20,15 +20,12 @@ fm_lock_log() {
   echo "${FM_LOCK_LOG_PREFIX:-fm-lock}: $*" >&2
 }
 
-# Portable mtime in epoch seconds. Kept self-contained so this leaf lib drags in
-# no wake-queue machinery when a caller only needs the staleness proof.
-fm_lock_path_mtime() {
-  if [ "$(uname)" = Darwin ]; then
-    stat -f %m "$1" 2>/dev/null
-  else
-    stat -c %Y "$1" 2>/dev/null
-  fi
-}
+# Portable mtime in epoch seconds. The only dependency this leaf lib takes is the
+# capability-probed stat helper (bin/fm-stat-lib.sh, itself dependency-free), so it
+# still drags in no wake-queue machinery when a caller only needs the staleness proof.
+FM_LOCK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-stat-lib.sh
+. "$FM_LOCK_LIB_DIR/fm-stat-lib.sh"
 
 # fm_lock_lsof_holder <target>: 0 a process holds it, 1 provably none, 2 lsof
 # errored (cannot tell). Diagnostics print on the error path only.
@@ -81,7 +78,7 @@ fm_lock_has_live_holder() {
 # fm_lock_age <lock>: prints the lock's mtime age in whole seconds, or fails.
 fm_lock_age() {
   local lock=$1 m now
-  m=$(fm_lock_path_mtime "$lock") || return 1
+  m=$(fm_stat_mtime "$lock") || return 1
   case "$m" in ''|*[!0-9]*) return 1 ;; esac
   now=$(date +%s) || return 1
   case "$now" in ''|*[!0-9]*) return 1 ;; esac

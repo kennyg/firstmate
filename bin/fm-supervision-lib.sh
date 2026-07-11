@@ -9,14 +9,10 @@
 # fields here for its banner but performs its end-of-turn block decision with the
 # live watcher lock check in bin/fm-wake-lib.sh.
 
-# Portable mtime; Linux stat lacks -f, macOS stat lacks -c.
-fm_sup_stat_mtime() {
-  if [ "$(uname)" = Darwin ]; then
-    stat -f %m "$1" 2>/dev/null
-  else
-    stat -c %Y "$1" 2>/dev/null
-  fi
-}
+# Portable mtime via capability-probed stat (one owner: bin/fm-stat-lib.sh).
+FM_SUP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-stat-lib.sh
+. "$FM_SUP_LIB_DIR/fm-stat-lib.sh"
 
 # fm_supervision_status <state-dir> [grace-seconds]
 # Populates, for the state dir at $1:
@@ -40,7 +36,7 @@ fm_supervision_status() {
 
   beat="$state/.last-watcher-beat"
   if [ -e "$beat" ]; then
-    m=$(fm_sup_stat_mtime "$beat")
+    m=$(fm_stat_mtime "$beat")
     if [ -n "$m" ]; then
       age=$(( $(date +%s) - m ))
       FM_SUP_BEACON_DESC="${age}s ago"
