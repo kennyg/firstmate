@@ -149,7 +149,7 @@ test_real_stat_returns_numeric() {
   assert_numeric "$mtime" 'real stat fm_stat_mtime'
   sig=$(call_helper '' fm_stat_sig "$TARGET")
   case "$sig" in
-    *:*) assert_numeric "${sig%%:*}" 'real stat sig size'; assert_numeric "${sig##*:}" 'real stat sig mtime' ;;
+    *:*) assert_numeric "${sig%%:*}" 'real stat sig size'; mtime="${sig##*:}"; assert_numeric "${mtime%%.*}" 'real stat sig mtime' ;;
     *) fail "real stat fm_stat_sig should be 'size:mtime', got '$sig'" ;;
   esac
   pass "fm-stat-lib: real host stat returns a numeric mtime and a size:mtime signature"
