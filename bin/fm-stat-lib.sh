@@ -16,8 +16,10 @@
 # THE FIX: detect the stat flavor by CAPABILITY, never by OS. Probe `stat -c %Y`
 # once against a path guaranteed to be statable (`/`); if that yields a bare
 # number this stat speaks GNU and we keep `-c %Y`, otherwise we use the BSD
-# `-f %m` form. The result is cached in FM_STAT_FLAVOR so detection runs at most
-# once per shell.
+# `-f %m` form. The probe is a single cheap stat. The FM_STAT_FLAVOR cache avoids
+# re-probing only within the same shell scope, so a caller that invokes
+# fm_stat_mtime through command substitution re-probes once per call, which is
+# negligible.
 #
 # fm_stat_mtime prints the mtime as epoch seconds on success and nothing (with a
 # non-zero exit) when the path cannot be stat'd, matching the old per-helper form

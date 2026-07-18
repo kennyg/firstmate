@@ -48,7 +48,7 @@ fm_guard_stale_episode_key() {
   local state=$1 beat m
   beat="$state/.last-watcher-beat"
   if [ -e "$beat" ]; then
-    m=$(fm_sup_stat_mtime "$beat")
+    m=$(fm_stat_mtime "$beat")
     printf 'beat:%s\n' "${m:-unknown}"
   else
     printf 'beat:absent\n'
