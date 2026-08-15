@@ -10,6 +10,7 @@
 #                 "BACKEND_INVALID: <name> (known: <names>)",
 #                 "STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
+#                 "OPTIONAL_TOOLS: invalid config/optional-tools - <reason>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "PR_CHECK_MIGRATION: <private remediation>",
 #                 "TANGLE: <remediation>",
@@ -62,6 +63,12 @@
 #          quota-axi is required for the agent-owned dispatch-profile array
 #          procedure in AGENTS.md section 4 and
 #          .agents/skills/quota-array-dispatch/SKILL.md.
+#          config/optional-tools declines a genuinely optional tool: an absent
+#          tool named there prints no MISSING line. The declinable set and its
+#          per-tool fallback evidence are owned beside DECLINABLE_TOOLS below;
+#          any other name, including one the resolved backend requires, prints
+#          OPTIONAL_TOOLS instead of being honored. Declination covers absence
+#          only, so an INSTALLED tool below its floor still reports MISSING.
 #          On a primary home, the locked mutable path materializes the visible
 #          default config/startup-memory-budget=7500 when absent. It never
 #          guesses at malformed or unsafe existing files, and secondmate homes
@@ -770,6 +777,34 @@ manual_install_url() {
   esac
 }
 
+# config/optional-tools (LOCAL, gitignored): one declined tool per non-empty,
+# non-comment line, same line shape as config/wedge-alarm. Sets DECLINED_TOOLS to
+# the honored names and prints an OPTIONAL_TOOLS diagnostic for every other name,
+# so a typo or a tool this home genuinely needs is reported instead of silently
+# honored or silently dropped. An absent file declines nothing.
+optional_tools_load() {
+  local file line
+  file="$CONFIG/optional-tools"
+  [ -f "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] || continue
+    case "$line" in '#'*) continue ;; esac
+    if fm_backend_list_contains "$BACKEND_TOOLS" "$line"; then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is required by the $BACKEND backend and cannot be declined"
+    elif ! fm_backend_list_contains "$DECLINABLE_TOOLS" "$line"; then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is not declinable (declinable: $DECLINABLE_TOOLS)"
+    else
+      DECLINED_TOOLS="$DECLINED_TOOLS $line"
+    fi
+  done < "$file"
+}
+
+tool_declined() {  # <tool>
+  fm_backend_list_contains "$DECLINED_TOOLS" "$1"
+}
+
 missing_tool_diagnostic() {
   local tool=$1 instructions
   if instructions=$(manual_install_url "$tool"); then
@@ -792,6 +827,20 @@ if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
   BACKEND_TOOLS=""
 fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
+
+# Declinable set for config/optional-tools. A tool belongs here only where
+# firstmate has a real fallback or degraded path: gh-axi and chrome-devtools-axi
+# gate GitHub and browser convenience work rather than any lifecycle step,
+# lavish-axi is explicitly the optional visual surface for decisions plain chat
+# already carries (AGENTS.md section 9), tasks-axi has the declared
+# config/backlog-backend=manual fallback, and quota-axi is read only to resolve a
+# crew-dispatch profile array, which a home without config/crew-dispatch.json
+# never has. node, git, gh, jq, no-mistakes, and the resolved backend's own
+# required tools break safety or core operation when absent, so they are never
+# declinable and naming one is a reported configuration error.
+DECLINABLE_TOOLS="gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
+DECLINED_TOOLS=""
+
 NO_MISTAKES_MIN=1.31.2
 # AXI-FAMILY FLOOR POLICY. Every axi-family floor is the CURRENT LATEST published
 # version of that tool, captain-bumped periodically to keep the whole fleet on the
@@ -1133,8 +1182,11 @@ detect_local_tools() {
     fm_backend_required_tool_available "$BACKEND" "$t" \
       || missing_tool_diagnostic "$t"
   done
+  # Declination covers ABSENCE only. The version-floor and feature-probe checks
+  # below stay untouched, because installing a tool is not declining it.
+  optional_tools_load
   for t in $COMMON_TOOLS; do
-    command -v "$t" >/dev/null || missing_tool_diagnostic "$t"
+    command -v "$t" >/dev/null || tool_declined "$t" || missing_tool_diagnostic "$t"
   done
   # The treehouse lease-support upgrade check is only relevant when the resolved
   # backend actually requires treehouse (every backend except orca, which owns its

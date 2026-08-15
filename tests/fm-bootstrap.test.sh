@@ -1148,6 +1148,65 @@ ROWS
   pass "bootstrap validates crew-dispatch.json and reports malformed or unverified configs"
 }
 
+# config/optional-tools declines a genuinely optional tool so its absence stops
+# printing MISSING. Each row (fields are '^'-separated):
+#   <label>^<tools removed from PATH, space-separated or ->^<file body, \n escapes, or - for no file>^<mode>^<expect, \n escapes>
+#   mode=empty -> output must be empty; exact -> output must equal <expect>
+test_optional_tools_declination() {
+  local label removed body mode expect case_dir fakebin out n tool
+  n=0
+  while IFS='^' read -r label removed body mode expect; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/optional-tools-$n"
+    mkdir -p "$case_dir/home/config"
+    fakebin=$(make_fake_toolchain "$case_dir")
+    if [ "$removed" != "-" ]; then
+      for tool in $removed; do rm -f "$fakebin/$tool"; done
+    fi
+    if [ "$body" != "-" ]; then
+      printf '%b' "$body" > "$case_dir/home/config/optional-tools"
+    fi
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+    case "$mode" in
+      empty)
+        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+      exact)
+        expect=$(printf '%b' "$expect")
+        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+    esac
+  done <<'ROWS'
+no file leaves every absent optional tool reported^gh-axi^-^exact^MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+every declined optional tool is silent when absent^gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi^gh-axi\nchrome-devtools-axi\nlavish-axi\ntasks-axi\nquota-axi\n^empty^
+an undeclared absent tool still reports^gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi^gh-axi\nchrome-devtools-axi\nlavish-axi\ntasks-axi\n^exact^MISSING: quota-axi (install: npm install -g quota-axi)
+comments and blank lines are ignored^lavish-axi^# declined on purpose\n\n   lavish-axi   \n\n^empty^
+an empty file declines nothing^lavish-axi^^exact^MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+a whitespace-only file declines nothing^lavish-axi^   \n\t\n^exact^MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+a core tool cannot be declined^-^git\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'git' is not declinable (declinable: gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi)
+a typo is reported and the tool still reports missing^lavish-axi^lavish-axy\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'lavish-axy' is not declinable (declinable: gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi)\nMISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+a backend-required tool cannot be declined^-^treehouse\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'treehouse' is required by the tmux backend and cannot be declined
+a rejected name is never honored^no-mistakes^no-mistakes\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'no-mistakes' is not declinable (declinable: gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi)\nMISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+ROWS
+  pass "config/optional-tools declines absent optional tools and reports non-declinable names"
+}
+
+# Declination covers ABSENCE only: an INSTALLED tool below its floor is still an
+# upgrade request, because installing a tool is not declining it.
+test_optional_tools_do_not_suppress_version_floors() {
+  local case_dir fakebin out expected
+  case_dir="$TMP_ROOT/optional-tools-floor"
+  mkdir -p "$case_dir/home/config"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  printf 'gh-axi\nlavish-axi\n' > "$case_dir/home/config/optional-tools"
+  expected='MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)'
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_GH_AXI_VERSION=0.1.1 FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  [ "$out" = "$expected" ] \
+    || fail "declining an installed below-floor tool should still report the upgrade, got: $out"
+  pass "config/optional-tools does not suppress version-floor upgrade reports"
+}
+
 test_bootstrap_reporting
 test_no_mistakes_min_version
 test_gh_axi_min_version
@@ -1176,3 +1235,5 @@ test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_crew_dispatch_validation
+test_optional_tools_declination
+test_optional_tools_do_not_suppress_version_floors
