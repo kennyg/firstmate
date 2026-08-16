@@ -37,12 +37,12 @@ This preference is local to each Firstmate home and is not part of secondmate in
 
 The tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
 When the default backend is selected and compatible `tasks-axi` is on `PATH`, firstmate uses its verbs for routine backlog mutations.
-Secondmate handoffs are separate and unconditional: `fm-backlog-handoff.sh` keeps only its own fleet-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
+Secondmate handoffs are separate from that backend choice: `fm-backlog-handoff.sh` keeps only its own fleet-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
 It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their home for pruning or archiving.
 Handoff item bodies must use at least two leading spaces, and the helper refuses a selected item with a single-space or tab-indented continuation rather than risk orphaning it.
-Because bootstrap requires `tasks-axi` on `PATH` on every profile, that delegation works fleet-wide, and the `config/backlog-backend=manual` knob governs firstmate's own hand-editing of its backlog, not this validated helper.
+Because bootstrap requires `tasks-axi` on `PATH` on every profile unless it is declined through `config/optional-tools` below, that delegation works fleet-wide wherever the tool is present, and the `config/backlog-backend=manual` knob governs firstmate's own hand-editing of its backlog, not this validated helper.
 Compatible means the installed build passes the shared version and feature probe owned by [`bin/fm-tasks-axi-lib.sh`](../bin/fm-tasks-axi-lib.sh), including the atomic multi-ID move required by handoff delegation.
-Bootstrap requires compatible `tasks-axi` on every profile; see "Toolchain" below for missing-tool reporting and silent default-backend behavior.
+Bootstrap requires compatible `tasks-axi` on every profile unless it is declined through `config/optional-tools`; see "Toolchain" below for missing-tool reporting and silent default-backend behavior, and "Declined optional tools" for what a `tasks-axi` declination still leaves broken.
 Set the local, gitignored `config/backlog-backend` file to `manual` to force manual backlog editing and suppress the verbose `BOOTSTRAP_INFO: tasks-axi available` fact, not missing-tool reporting.
 Absent or `tasks-axi` selects the default tasks-axi backend.
 The file format is unchanged in both modes; tasks-axi and manual edits produce the same `## In flight`, `## Queued`, and `## Done` sections.
@@ -305,11 +305,12 @@ Orca provides both the task worktree and terminal endpoint (see "Runtime backend
 A herdr, zellij, or cmux home is therefore never told `tmux` is missing, and the `treehouse` durable-lease upgrade check runs only for the backends that actually use treehouse.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
-`tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`.
+`tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`, unless declined through `config/optional-tools` below.
 An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm install -g tasks-axi)`; when `config/backlog-backend` is not `manual` and compatible `tasks-axi` is on `PATH`, bootstrap stays silent and firstmate uses its verbs for routine backlog mutations, otherwise it hand-edits `data/backlog.md` until installation is approved and completed.
 An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)`.
 An absent or incompatible `lavish-axi` reports `MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)`.
 An absent or too-old `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota-axi)`; firstmate cannot resolve a profile array without a compatible binary.
+To stop reporting an optional tool you have decided against, see "Declined optional tools" below.
 Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
 The locked session-start deferred network stage runs bootstrap's best-effort project clone refresh through `fm-fleet-sync.sh`.
@@ -326,12 +327,33 @@ When a running home advances and its loaded instruction surface (`AGENTS.md`, `b
 If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_SECONDMATES:` with the failure reason.
 The same bootstrap run emits `SECONDMATE_LIVENESS:` only when a registered secondmate is skipped or its relaunch fails; already-live and successfully relaunched secondmates are handled silently.
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/fm-config-push.sh`.
-It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, and `data/captain-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
+It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, `optional-tools`, and `data/captain-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
 When an allowlisted config item changes for an already-running local home, it sends the literal-content reread pointer described in [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
 A changed remote home instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
 The locked bootstrap inheritance pass uses the same placement-specific behavior; see `secondmate-provisioning` for the single contract owner.
 That live discovery starts from `state/*.meta` records with `kind=secondmate`; `data/secondmates.md` only backfills `home=` for older or incomplete meta records.
 Skipped items, such as a destination checkout that does not yet gitignore the item, are visible warnings but not hard failures.
+
+## Declined optional tools (config/optional-tools)
+
+The local, gitignored `config/optional-tools` file declares tools you have consciously decided against, so an absent one stops being reported as missing at every session start.
+Write one tool name per line; blank lines, surrounding whitespace, and `#` comment lines are ignored, and an absent file declines nothing.
+An honored declination stays silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: declined optional tools: <names>` naming the honored ones only, so a durable declination stays discoverable on demand without becoming a session-start nag.
+
+Only genuinely optional tools may be declined, because each of them has a real fallback or degraded path: `gh-axi` and `chrome-devtools-axi` gate GitHub and browser convenience work rather than any lifecycle step, `lavish-axi` is the optional visual surface for decisions plain chat already carries, `tasks-axi` has the `config/backlog-backend=manual` fallback described above, and `quota-axi`'s heaviest read is resolving a crew-dispatch profile array, which a home with no `config/crew-dispatch.json` never has.
+That last condition is enforced rather than assumed: while this home has a `config/crew-dispatch.json`, a `quota-axi` declination is refused and reported instead of honored, so clear it by removing the `quota-axi` line from `config/optional-tools`, installing `quota-axi`, or removing the dispatch profiles.
+That enforcement covers profile-array resolution only, and declining `quota-axi` still leaves the second read surface exposed: [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) directs firstmate to `quota-axi auth --json` for an ambiguous harness/model tuple, and `AGENTS.md` section 4 requires loading that skill before every spawn rather than only before array resolution.
+The partial guard is still worth keeping because it is real enforcement of the hazard it does cover.
+The `tasks-axi` fallback covers firstmate's own routine backlog editing only, and declaring the tool declined is an honest statement of an existing state rather than a new risk, because the breakage below comes from the tool being absent and not from the declaration, so what follows is exactly what stays broken.
+Every home loses non-forced scout cleanup whatever the backlog backend, because `bin/fm-teardown.sh` settles a scout's unresolved-decision completion gate through `bin/fm-decision-hold.sh`, whose `verify` command needs a compatible `tasks-axi`, as do the `resolve`, `decline`, and `repair` commands that would clear the hold, so the gate can neither pass nor be cleared.
+Alongside that, `bin/fm-backlog-handoff.sh` and its remote counterpart `bin/fm-backlog-receive.sh` are unavailable because they delegate the item move unconditionally, remote secondmate provisioning hard-blocks because `bin/fm-remote-doctor.sh` counts `tasks-axi` among its required tools and `bin/fm-remote-home-seed.sh` turns that into `remote runtime preflight failed; nothing was provisioned`, and a Relay home cannot keep a promised public reply because `bin/fm-public-followup.sh` requires the tool outright.
+Nothing gates that declination, since gating it on `config/backlog-backend=manual` would guard nothing.
+`node`, `git`, `gh`, `jq`, `no-mistakes`, and the resolved backend's own required tools break safety or core operation when absent, so they can never be declined.
+[`bin/fm-bootstrap.sh`](../bin/fm-bootstrap.sh) owns the declinable set.
+
+Naming anything else, including a typo, a tool the resolved backend requires, or a conditional declination whose condition does not hold here, reports `OPTIONAL_TOOLS: invalid config/optional-tools - <reason>` and is never honored, so declination cannot silence a tool this home actually needs.
+Declination covers absence only: an installed tool below its version floor still reports `MISSING:`, because installing a tool is not declining it.
+The file is inherited by secondmate homes like the other local operating choices above, and each home re-resolves the non-declinable set against its own backend, so an inherited name that home requires is reported there rather than honored.
 
 ## Relay (.env)
 

@@ -10,6 +10,7 @@
 #                 "BACKEND_INVALID: <name> (known: <names>)",
 #                 "STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
+#                 "OPTIONAL_TOOLS: invalid config/optional-tools - <reason>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "PR_CHECK_MIGRATION: <private remediation>",
 #                 "TANGLE: <remediation>",
@@ -58,10 +59,20 @@
 #          is asked to upgrade rather than silently running an older tool.
 #          tasks-axi feature probes remain a separate defense-in-depth check.
 #          tasks-axi and quota-axi are required bootstrap tools (same class as
-#          lavish-axi). A compatible tasks-axi default backend is silent.
-#          quota-axi is required for the agent-owned dispatch-profile array
-#          procedure in AGENTS.md section 4 and
-#          .agents/skills/quota-array-dispatch/SKILL.md.
+#          lavish-axi) unless declined through config/optional-tools.
+#          A compatible tasks-axi default backend is silent.
+#          quota-axi is required, unless declined the same way, for the
+#          agent-owned dispatch-profile array procedure in AGENTS.md section 4
+#          and .agents/skills/quota-array-dispatch/SKILL.md.
+#          config/optional-tools declines a genuinely optional tool: an absent
+#          tool named there prints no MISSING line, and only
+#          FM_BOOTSTRAP_VERBOSE_FACTS=1 names the honored declinations as a
+#          BOOTSTRAP_INFO fact. The declinable set is owned beside
+#          DECLINABLE_TOOLS below, and docs/configuration.md "Declined optional
+#          tools" owns the per-tool rationale and the residual limitations;
+#          any other name, including one the resolved backend requires, prints
+#          OPTIONAL_TOOLS instead of being honored. Declination covers absence
+#          only, so an INSTALLED tool below its floor still reports MISSING.
 #          On a primary home, the locked mutable path materializes the visible
 #          default config/startup-memory-budget=7500 when absent. It never
 #          guesses at malformed or unsafe existing files, and secondmate homes
@@ -770,6 +781,51 @@ manual_install_url() {
   esac
 }
 
+# A declinable tool whose fallback holds only under a condition is declinable
+# only while that condition actually holds in THIS home, so the documented
+# rationale is enforced rather than assumed. Prints the reason and returns
+# 0 when the declination must be refused, and returns 1 when it may be honored.
+declination_blocked_reason() {  # <tool>
+  case "$1" in
+    quota-axi)
+      [ -f "$CONFIG/crew-dispatch.json" ] || return 1
+      echo "'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove the quota-axi line from config/optional-tools, install quota-axi, or remove config/crew-dispatch.json"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# config/optional-tools (LOCAL, gitignored): one declined tool per non-empty,
+# non-comment line, same line shape as config/wedge-alarm. Sets DECLINED_TOOLS to
+# the honored names and prints an OPTIONAL_TOOLS diagnostic for every other name,
+# so a typo, a tool this home genuinely needs, or a conditional declination whose
+# condition does not hold here is reported instead of silently honored or
+# silently dropped. An absent file declines nothing.
+optional_tools_load() {
+  local file line reason
+  file="$CONFIG/optional-tools"
+  [ -f "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] || continue
+    case "$line" in '#'*) continue ;; esac
+    if fm_backend_list_contains "$BACKEND_TOOLS" "$line"; then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is required by the $BACKEND backend and cannot be declined"
+    elif ! fm_backend_list_contains "$DECLINABLE_TOOLS" "$line"; then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is not declinable (declinable: $DECLINABLE_TOOLS)"
+    elif reason=$(declination_blocked_reason "$line"); then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - $reason"
+    else
+      DECLINED_TOOLS="$DECLINED_TOOLS $line"
+    fi
+  done < "$file"
+}
+
+tool_declined() {  # <tool>
+  fm_backend_list_contains "$DECLINED_TOOLS" "$1"
+}
+
 missing_tool_diagnostic() {
   local tool=$1 instructions
   if instructions=$(manual_install_url "$tool"); then
@@ -792,6 +848,15 @@ if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
   BACKEND_TOOLS=""
 fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
+
+# Declinable set for config/optional-tools. A tool belongs here only where
+# firstmate has a real fallback or degraded path. docs/configuration.md
+# "Declined optional tools" owns the per-tool rationale, the never-declinable
+# set, the conditions declination_blocked_reason enforces, and what a declination
+# still leaves broken.
+DECLINABLE_TOOLS="gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
+DECLINED_TOOLS=""
+
 NO_MISTAKES_MIN=1.31.2
 # AXI-FAMILY FLOOR POLICY. Every axi-family floor is the CURRENT LATEST published
 # version of that tool, captain-bumped periodically to keep the whole fleet on the
@@ -1133,8 +1198,14 @@ detect_local_tools() {
     fm_backend_required_tool_available "$BACKEND" "$t" \
       || missing_tool_diagnostic "$t"
   done
+  # Declination covers ABSENCE only. The version-floor and feature-probe checks
+  # below stay untouched, because installing a tool is not declining it.
+  optional_tools_load
+  if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] && [ -n "$DECLINED_TOOLS" ]; then
+    echo "BOOTSTRAP_INFO: declined optional tools: ${DECLINED_TOOLS# }"
+  fi
   for t in $COMMON_TOOLS; do
-    command -v "$t" >/dev/null || missing_tool_diagnostic "$t"
+    command -v "$t" >/dev/null || tool_declined "$t" || missing_tool_diagnostic "$t"
   done
   # The treehouse lease-support upgrade check is only relevant when the resolved
   # backend actually requires treehouse (every backend except orca, which owns its
