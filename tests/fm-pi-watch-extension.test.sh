@@ -89,6 +89,12 @@ SH
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let handler = null;
 let notification = "";
 let prompt = "";
@@ -124,7 +130,7 @@ if (!notification.includes("started Pi extension arm child")) {
   console.error(notification);
   process.exit(1);
 }
-for (let i = 0; i < 250 && !prompt; i += 1) {
+for (let i = 0; i < 250 * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!prompt.startsWith("\u2063FIRSTMATE_OP: v1 watcher: ")) {
@@ -234,6 +240,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 const pi = {
   on() {},
@@ -260,7 +272,7 @@ if (/^watcher: healthy\b/.test(redundant.content[0]?.text)) {
 if (!redundant.content[0]?.text.includes("only after a later notification says the cycle is missing, failed, or unhealthy")) {
   throw new Error(`redundant call omitted the repair-only condition: ${redundant.content[0]?.text}`);
 }
-for (let i = 0; i < 100 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 100 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("initial arm child did not start");
@@ -294,6 +306,12 @@ SH
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 const pi = {
   on() {},
@@ -308,7 +326,7 @@ const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-first", {}, undefined, undefined, {});
 let redundant = null;
-for (let i = 0; i < 100; i += 1) {
+for (let i = 0; i < 100 * fmScale; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
   redundant = await tool.execute("tool-call-during-retry", {}, undefined, undefined, {});
   if (redundant.content[0]?.text.includes("scheduled continuity retry")) break;
@@ -364,6 +382,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 let deliveryStarted = false;
 let rowsAtDelivery = 0;
@@ -389,7 +413,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-continuity", {}, undefined, undefined, {});
-for (let i = 0; i < 250; i += 1) {
+for (let i = 0; i < 250 * fmScale; i += 1) {
   const rows = existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
     : [];
@@ -405,7 +429,7 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 const stableRows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
 if (stableRows.length !== 2) throw new Error(`delivery was confirmed before the prompt succeeded: ${stableRows.join(" | ")}`);
 releaseDelivery();
-for (let i = 0; i < 100; i += 1) {
+for (let i = 0; i < 100 * fmScale; i += 1) {
   if (readFileSync(process.env.FM_ARM_LOG, "utf8").includes("confirmed generation=fixture-generation")) break;
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
@@ -448,10 +472,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 let tool = null;
 let prompt = "";
@@ -473,7 +499,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-hung-successor", {}, undefined, undefined, {});
-for (let i = 0; i < fmPollLimit && !prompt; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -525,10 +551,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 let tool = null;
 let prompt = "";
@@ -550,7 +578,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-unretired-successor", {}, undefined, undefined, {});
-for (let i = 0; i < fmPollLimit && !prompt; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -608,10 +636,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 let tool = null;
 const prompts = [];
@@ -629,7 +659,7 @@ const rows = () => existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
 async function waitFor(predicate, message) {
-  for (let i = 0; i < fmPollLimit; i += 1) {
+  for (let i = 0; i < 500 * fmScale * fmScale; i += 1) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -651,7 +681,7 @@ await waitFor(
 if (rows().length !== 2) throw new Error(`unretired arm overlapped before fallback: ${rows().join(" | ")}`);
 if (!prompts[0]?.includes("original wake")) throw new Error(`missing original fallback: ${prompts.join(" | ")}`);
 writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
-for (let i = 0; i < fmPollLimit; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale; i += 1) {
   if (rows().length >= 3 && (process.env.FM_LATE_KIND !== "actionable" || prompts.some((message) => message.includes("late wake")))) break;
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
@@ -695,6 +725,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 let prompts = 0;
 const pi = {
@@ -711,7 +747,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-empty", {}, undefined, undefined, {});
-for (let i = 0; i < 250; i += 1) {
+for (let i = 0; i < 250 * fmScale; i += 1) {
   const rows = existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
     : [];
@@ -750,6 +786,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 let prompt = "";
 const pi = {
@@ -766,7 +808,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-established-empty", {}, undefined, undefined, {});
-for (let i = 0; i < 250 && !prompt; i += 1) {
+for (let i = 0; i < 250 * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -803,6 +845,12 @@ import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 let prompt = "";
 const pi = {
@@ -824,7 +872,7 @@ const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { s
 try {
   writeFileSync(lock, `${other.pid}\n`);
   writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
-  for (let i = 0; i < 250 && !prompt.includes("no longer owns the lock"); i += 1) {
+  for (let i = 0; i < 250 * fmScale && !prompt.includes("no longer owns the lock"); i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
@@ -858,6 +906,12 @@ SH
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
 
 let tool = null;
 const pi = {
@@ -910,7 +964,7 @@ const owned = await callArm();
 if (owned.details?.ok !== true || !owned.details.message.includes("started Pi extension arm child")) {
   throw new Error(`owned lock did not arm: ${JSON.stringify(owned.details)}`);
 }
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("owned lock did not run the watcher arm");
@@ -944,6 +998,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 function makePi() {
   const handlers = new Map();
   let tool = null;
@@ -970,7 +1030,7 @@ function pidAlive(pid) {
   }
 }
 
-async function waitFor(pred, label, attempts = 250) {
+async function waitFor(pred, label, attempts = 250 * fmScale) {
   for (let i = 0; i < attempts; i += 1) {
     if (pred()) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1166,6 +1226,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 let tool = null;
 const handlers = new Map();
 const pi = {
@@ -1182,7 +1248,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-exit", {}, undefined, undefined, {});
-for (let i = 0; i < 250 && !existsSync(process.env.FM_CHILD_PID_FILE); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_CHILD_PID_FILE); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_CHILD_PID_FILE)) throw new Error("arm child did not start");
@@ -1190,7 +1256,7 @@ const firstChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
 await handlers.get("session_shutdown")?.({ type: "session_shutdown" }, {});
 await handlers.get("session_start")?.({ type: "session_start" }, {});
 await tool.execute("tool-call-replacement", {}, undefined, undefined, {});
-for (let i = 0; i < 250; i += 1) {
+for (let i = 0; i < 250 * fmScale; i += 1) {
   const currentChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
   if (currentChild !== firstChild) break;
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1258,6 +1324,12 @@ SH
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -1267,7 +1339,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) {
@@ -1308,6 +1380,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -1317,7 +1395,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) {
@@ -1357,6 +1435,12 @@ SH
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -1374,7 +1458,7 @@ if (existsSync(process.env.FM_ARM_LOG)) {
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) {
@@ -1469,6 +1553,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompts = 0;
 let rowsAtPrompt = 0;
@@ -1495,7 +1585,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
-for (let i = 0; i < 250; i += 1) {
+for (let i = 0; i < 250 * fmScale; i += 1) {
   const rows = existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
     : [];
@@ -1511,7 +1601,7 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 const stableRows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
 if (stableRows.length !== 2) throw new Error(`delivery was confirmed before the prompt succeeded: ${stableRows.join(" | ")}`);
 releasePrompt();
-for (let i = 0; i < 100; i += 1) {
+for (let i = 0; i < 100 * fmScale; i += 1) {
   if (readFileSync(process.env.FM_ARM_LOG, "utf8").includes("confirmed generation=fixture-generation")) break;
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
@@ -1565,6 +1655,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const prompts = [];
 const client = {
@@ -1581,7 +1677,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 500; i += 1) {
+for (let i = 0; i < 500 * fmScale; i += 1) {
   const rows = existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
     : [];
@@ -1594,7 +1690,7 @@ if (!prompts.some((message) => message.includes("original wake"))) throw new Err
 await new Promise((resolve) => setTimeout(resolve, 150));
 if (existsSync(process.env.FM_PRE_READY_RETIRED_FILE)) throw new Error("pre-ready actionable successor was retired before its close");
 writeFileSync(process.env.FM_PRE_READY_RELEASE_FILE, "release\n");
-for (let i = 0; i < 500; i += 1) {
+for (let i = 0; i < 500 * fmScale; i += 1) {
   const successorRows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
   if (successorRows.length >= 3 && prompts.some((message) => message.includes("pre-ready successor wake"))) break;
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1638,10 +1734,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompt = "";
@@ -1663,7 +1761,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < fmPollLimit && !prompt; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -1717,10 +1815,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompt = "";
@@ -1742,7 +1842,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < fmPollLimit && !prompt; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -1802,10 +1902,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Outcome bound, not a settle window: it has to stay clear of the scaled
-// arm-readiness budgets this case deliberately lets expire (up to three of
-// them in sequence), or the wake lands after the poll has already given up.
-const fmPollLimit = 500 * (Number(process.env.FM_TEST_TIMING_SCALE) || 1);
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const prompts = [];
@@ -1820,7 +1922,7 @@ const rows = () => existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
 async function waitFor(predicate, message) {
-  for (let i = 0; i < fmPollLimit; i += 1) {
+  for (let i = 0; i < 500 * fmScale * fmScale; i += 1) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -1845,7 +1947,7 @@ await waitFor(
 if (rows().length !== 2) throw new Error(`unretired arm overlapped before fallback: ${rows().join(" | ")}`);
 if (!prompts[0]?.includes("original wake")) throw new Error(`missing original fallback: ${prompts.join(" | ")}`);
 writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
-for (let i = 0; i < fmPollLimit; i += 1) {
+for (let i = 0; i < 500 * fmScale * fmScale; i += 1) {
   if (rows().length >= 3 && (process.env.FM_LATE_KIND !== "actionable" || prompts.some((message) => message.includes("late wake")))) break;
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
@@ -1891,6 +1993,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompts = 0;
 const client = {
@@ -1907,7 +2015,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250; i += 1) {
+for (let i = 0; i < 250 * fmScale; i += 1) {
   const rows = existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
     : [];
@@ -1947,6 +2055,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompt = "";
 const client = {
@@ -1963,7 +2077,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !prompt; i += 1) {
+for (let i = 0; i < 250 * fmScale && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.FM_ARM_LOG)
@@ -2002,6 +2116,12 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompt = "";
 const client = {
@@ -2019,7 +2139,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 const lock = `${process.env.FM_HOME}/state/.lock`;
 writeFileSync(lock, `${process.pid}\n`);
 const eventPromise = hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -2027,7 +2147,7 @@ try {
   writeFileSync(lock, `${other.pid}\n`);
   writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
   await eventPromise;
-  for (let i = 0; i < 250 && !prompt.includes("no longer owns the lock"); i += 1) {
+  for (let i = 0; i < 250 * fmScale && !prompt.includes("no longer owns the lock"); i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
@@ -2072,6 +2192,12 @@ SH
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const armMod = await import(pathToFileURL(process.env.ARM_PLUGIN).href);
 const guardMod = await import(pathToFileURL(process.env.GUARD_PLUGIN).href);
 let promptBody = "";
@@ -2094,7 +2220,7 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) {
@@ -2145,6 +2271,12 @@ SH
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Outcome bounds, not settle windows: they exit as soon as the condition
+// holds, so scaling them costs nothing on a passing run and only buys a
+// slower host the time to get there. Never applied to a fixed window whose
+// length is itself the assertion.
+const fmScale = Number(process.env.FM_TEST_TIMING_SCALE) || 1;
+
 const armMod = await import(pathToFileURL(process.env.ARM_PLUGIN).href);
 const guardMod = await import(pathToFileURL(process.env.GUARD_PLUGIN).href);
 let promptBody = "";
@@ -2167,7 +2299,7 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_GUARD_LOG); i += 1) {
+for (let i = 0; i < 250 * fmScale && !existsSync(process.env.FM_GUARD_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) {
