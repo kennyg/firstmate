@@ -50,6 +50,71 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
+# --- host-derived timing budgets --------------------------------------------
+#
+# Some suites hand a component a deliberately short budget and assert on what
+# happens when it EXPIRES: an arm-readiness window, a watcher cycle bound, a
+# state-check timeout. Such a budget still has to outlast the time this host
+# needs to start the spawned fixture child, because the component kills that
+# child the moment the budget runs out. A child killed before it records its
+# evidence makes the assertion read state that was never written, and the suite
+# then fails for a reason unrelated to the behavior under test.
+#
+# The budget is therefore derived from the host instead of fixed. Online CPU
+# count against a reference developer machine sets the scale, with a floor when
+# a CI marker is present (the same GITHUB_ACTIONS/CI signal bin/fm-lint.sh keys
+# on). A machine at or above the reference scales by 1, so a local run never
+# pays for a hosted-runner problem.
+#
+# Scale a budget that must OUTLAST fixture startup, and an upper bound a healthy
+# run never reaches. Do NOT scale a settle window whose length IS the assertion:
+# an exactly-once or absence proof needs the whole window, so shortening it
+# silently weakens the test and lengthening it only costs time.
+FM_TEST_TIMING_REFERENCE_CPUS=12
+FM_TEST_TIMING_CI_FLOOR=8
+FM_TEST_TIMING_MAX_SCALE=16
+
+fm_test_online_cpus() {
+  local cpus
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+  case "$cpus" in
+    '' | *[!0-9]* | 0) cpus=$(sysctl -n hw.ncpu 2>/dev/null || true) ;;
+  esac
+  case "$cpus" in
+    '' | *[!0-9]* | 0) cpus=$FM_TEST_TIMING_REFERENCE_CPUS ;;
+  esac
+  printf '%s\n' "$cpus"
+}
+
+# Round the ratio up so any host below the reference scales past 1.
+fm_test_resolve_timing_scale() {
+  local cpus scale
+  cpus=$(fm_test_online_cpus)
+  scale=$(( (FM_TEST_TIMING_REFERENCE_CPUS + cpus - 1) / cpus ))
+  [ "$scale" -ge 1 ] || scale=1
+  if [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ]; then
+    [ "$scale" -ge "$FM_TEST_TIMING_CI_FLOOR" ] || scale=$FM_TEST_TIMING_CI_FLOOR
+  fi
+  [ "$scale" -le "$FM_TEST_TIMING_MAX_SCALE" ] || scale=$FM_TEST_TIMING_MAX_SCALE
+  printf '%s\n' "$scale"
+}
+
+# Resolved once per process tree and exported, so every helper and fixture in one
+# run agrees on a single value. An explicit FM_TEST_TIMING_SCALE always wins.
+case "${FM_TEST_TIMING_SCALE:-}" in
+  '' | *[!0-9]* | 0) FM_TEST_TIMING_SCALE=$(fm_test_resolve_timing_scale) ;;
+esac
+export FM_TEST_TIMING_SCALE
+
+# fm_test_budget <base>: scale one budget for this host. Unit-agnostic; the
+# caller decides whether <base> is milliseconds or seconds.
+fm_test_budget() {
+  case "$1" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$(( $1 * FM_TEST_TIMING_SCALE ))"
+}
+
 # --- self-cleaning temp root ------------------------------------------------
 #
 # fm_test_tmproot <prefix> echoes a fresh temp dir and registers it for removal
@@ -278,10 +343,20 @@ assert_not_contains() {
   esac
 }
 
-# expect_code <expected> <actual> <label>
+# expect_code <expected> <actual> <label> [captured-output]
+#
+# Pass the captured output whenever the call site ran a whole program under
+# `out=$(... 2>&1)`. The diagnostic that explains the exit code is in that
+# output, and a bare code turns a failure into a fact nobody can act on: three
+# of the CI failures this file's timing work chased reported only
+# "expected exit 0, got 1" while the error naming the broken assertion sat
+# discarded in the caller's variable. The argument is optional so existing
+# callers with nothing to add keep the original one-line message.
 expect_code() {
-  local expected=$1 actual=$2 label=$3
-  [ "$actual" = "$expected" ] || fail "$label: expected exit $expected, got $actual"
+  local expected=$1 actual=$2 label=$3 captured=${4:-}
+  [ "$actual" = "$expected" ] && return 0
+  [ -z "$captured" ] || fail "$label: expected exit $expected, got $actual"$'\n'"--- output ---"$'\n'"$captured"
+  fail "$label: expected exit $expected, got $actual"
 }
 
 # assert_grep <pattern> <file> <msg>: fixed-string grep must match in <file>.
