@@ -851,8 +851,8 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 # lavish-axi is explicitly the optional visual surface for decisions plain chat
 # already carries (AGENTS.md section 9), tasks-axi has the declared
 # config/backlog-backend=manual fallback for firstmate's own routine backlog
-# editing with secondmate handoff and remote provisioning the residual gaps
-# docs/configuration.md "Declined optional tools" records, and quota-axi's
+# editing while its other callers stay broken while it is absent, which
+# docs/configuration.md "Declined optional tools" records in full, and quota-axi's
 # heaviest read is resolving a crew-dispatch profile array, which a home without
 # config/crew-dispatch.json never has - declination_blocked_reason above ENFORCES
 # that last condition, so a home that does have dispatch profiles is told rather
