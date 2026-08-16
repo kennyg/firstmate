@@ -338,6 +338,7 @@ Skipped items, such as a destination checkout that does not yet gitignore the it
 
 The local, gitignored `config/optional-tools` file declares tools you have consciously decided against, so an absent one stops being reported as missing at every session start.
 Write one tool name per line; blank lines, surrounding whitespace, and `#` comment lines are ignored, and an absent file declines nothing.
+An honored declination stays silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: declined optional tools: <names>` naming the honored ones only, so a durable declination stays discoverable on demand without becoming a session-start nag.
 
 Only genuinely optional tools may be declined, because each of them has a real fallback or degraded path: `gh-axi` and `chrome-devtools-axi` gate GitHub and browser convenience work rather than any lifecycle step, `lavish-axi` is the optional visual surface for decisions plain chat already carries, `tasks-axi` has the `config/backlog-backend=manual` fallback described above, and `quota-axi`'s heaviest read is resolving a crew-dispatch profile array, which a home with no `config/crew-dispatch.json` never has.
 That last condition is enforced rather than assumed: while this home has a `config/crew-dispatch.json`, a `quota-axi` declination is refused and reported instead of honored, so clear it by removing the `quota-axi` line from `config/optional-tools`, installing `quota-axi`, or removing the dispatch profiles.

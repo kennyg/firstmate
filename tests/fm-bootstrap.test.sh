@@ -1151,7 +1151,8 @@ ROWS
 # config/optional-tools declines a genuinely optional tool so its absence stops
 # printing MISSING. Each row (fields are '^'-separated):
 #   <label>^<tools removed from PATH, space-separated or ->^<config/crew-dispatch.json body, or - for no file>^<file body, \n escapes, or - for no file>^<mode>^<expect, \n escapes>
-#   mode=empty -> output must be empty; exact -> output must equal <expect>
+#   mode=empty -> output must be empty; exact -> output must equal <expect>;
+#   verbose -> output under FM_BOOTSTRAP_VERBOSE_FACTS=1 must equal <expect>
 test_optional_tools_declination() {
   local label removed dispatch body mode expect case_dir fakebin out n tool
   n=0
@@ -1179,6 +1180,15 @@ test_optional_tools_declination() {
       exact)
         expect=$(printf '%b' "$expect")
         [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+      verbose)
+        case "$out" in
+          *'declined optional tools'*)
+            fail "$label: the declination fact must not print by default, got: $out" ;;
+        esac
+        out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+          FM_BOOTSTRAP_VERBOSE_FACTS=1 FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+        expect=$(printf '%b' "$expect")
+        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
     esac
   done <<'ROWS'
 no file leaves every absent optional tool reported^gh-axi^-^-^exact^MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
@@ -1194,6 +1204,8 @@ a rejected name is never honored^no-mistakes^-^no-mistakes\n^exact^OPTIONAL_TOOL
 declining quota-axi with dispatch profiles is refused and the tool still reports^quota-axi^{"default":{"harness":"codex"}}^quota-axi\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove the quota-axi line from config/optional-tools, install quota-axi, or remove config/crew-dispatch.json\nMISSING: quota-axi (install: npm install -g quota-axi)
 declining quota-axi with no dispatch profiles stays silent^quota-axi^-^quota-axi\n^empty^
 another declinable tool is still honored alongside a refused quota-axi^lavish-axi quota-axi^{"default":{"harness":"codex"}}^lavish-axi\nquota-axi\n^exact^OPTIONAL_TOOLS: invalid config/optional-tools - 'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove the quota-axi line from config/optional-tools, install quota-axi, or remove config/crew-dispatch.json\nMISSING: quota-axi (install: npm install -g quota-axi)
+honored declinations are named only as a verbose fact^lavish-axi tasks-axi^-^lavish-axi\ntasks-axi\n^verbose^BOOTSTRAP_INFO: declined optional tools: lavish-axi tasks-axi
+a name that was never honored produces no verbose fact^lavish-axi tasks-axi^-^lavish-axy\n^verbose^OPTIONAL_TOOLS: invalid config/optional-tools - 'lavish-axy' is not declinable (declinable: gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi)\nMISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)\nMISSING: tasks-axi (install: npm install -g tasks-axi)
 ROWS
   pass "config/optional-tools declines absent optional tools and reports non-declinable names"
 }
