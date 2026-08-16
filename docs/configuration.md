@@ -37,10 +37,10 @@ This preference is local to each Firstmate home and is not part of secondmate in
 
 The tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
 When the default backend is selected and compatible `tasks-axi` is on `PATH`, firstmate uses its verbs for routine backlog mutations.
-Secondmate handoffs are separate and unconditional: `fm-backlog-handoff.sh` keeps only its own fleet-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
+Secondmate handoffs are separate from that backend choice: `fm-backlog-handoff.sh` keeps only its own fleet-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
 It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their home for pruning or archiving.
 Handoff item bodies must use at least two leading spaces, and the helper refuses a selected item with a single-space or tab-indented continuation rather than risk orphaning it.
-Because bootstrap requires `tasks-axi` on `PATH` on every profile, that delegation works fleet-wide, and the `config/backlog-backend=manual` knob governs firstmate's own hand-editing of its backlog, not this validated helper.
+Because bootstrap requires `tasks-axi` on `PATH` on every profile unless it is declined through `config/optional-tools` below, that delegation works fleet-wide wherever the tool is present, and the `config/backlog-backend=manual` knob governs firstmate's own hand-editing of its backlog, not this validated helper.
 Compatible means the installed build passes the shared version and feature probe owned by [`bin/fm-tasks-axi-lib.sh`](../bin/fm-tasks-axi-lib.sh), including the atomic multi-ID move required by handoff delegation.
 Bootstrap requires compatible `tasks-axi` on every profile; see "Toolchain" below for missing-tool reporting and silent default-backend behavior.
 Set the local, gitignored `config/backlog-backend` file to `manual` to force manual backlog editing and suppress the verbose `BOOTSTRAP_INFO: tasks-axi available` fact, not missing-tool reporting.
@@ -341,6 +341,7 @@ Write one tool name per line; blank lines, surrounding whitespace, and `#` comme
 
 Only genuinely optional tools may be declined, because each of them has a real fallback or degraded path: `gh-axi` and `chrome-devtools-axi` gate GitHub and browser convenience work rather than any lifecycle step, `lavish-axi` is the optional visual surface for decisions plain chat already carries, `tasks-axi` has the `config/backlog-backend=manual` fallback described above, and `quota-axi` is read only to resolve a crew-dispatch profile array, which a home with no `config/crew-dispatch.json` never has.
 That last condition is enforced rather than assumed: while this home has a `config/crew-dispatch.json`, a `quota-axi` declination is refused and reported instead of honored, so clear it by removing the dispatch profiles or installing `quota-axi`.
+The `tasks-axi` fallback covers firstmate's own backlog editing only, so declining it also leaves `bin/fm-backlog-handoff.sh` unavailable whatever the backlog backend, because that helper delegates the item move unconditionally; nothing gates that declination, since gating it on `config/backlog-backend=manual` would guard nothing, and it matters only for a home with registered secondmates.
 `node`, `git`, `gh`, `jq`, `no-mistakes`, and the resolved backend's own required tools break safety or core operation when absent, so they can never be declined.
 [`bin/fm-bootstrap.sh`](../bin/fm-bootstrap.sh) owns the declinable set.
 

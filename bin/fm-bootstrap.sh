@@ -850,7 +850,9 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 # gate GitHub and browser convenience work rather than any lifecycle step,
 # lavish-axi is explicitly the optional visual surface for decisions plain chat
 # already carries (AGENTS.md section 9), tasks-axi has the declared
-# config/backlog-backend=manual fallback, and quota-axi is read only to resolve a
+# config/backlog-backend=manual fallback for firstmate's own routine backlog
+# editing with secondmate handoff the residual gap docs/configuration.md
+# "Declined optional tools" records, and quota-axi is read only to resolve a
 # crew-dispatch profile array, which a home without config/crew-dispatch.json
 # never has - declination_blocked_reason above ENFORCES that last condition, so a
 # home that does have dispatch profiles is told rather than silenced. node, git,
