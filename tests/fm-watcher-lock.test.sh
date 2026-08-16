@@ -479,7 +479,12 @@ test_watch_restart_attaches_to_healthy_peer() {
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "$identity" > "$state/.watch.lock/pid-identity"
   touch "$state/.last-watcher-beat"
-  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" &
+  # A confirmation budget the passing path never spends: the peer is already
+  # healthy, so the arm's confirmation loop and the successor wait inside
+  # owned_child_finished both resolve on their first read. Host-derived only so a
+  # slow runner that momentarily reads the peer as unhealthy still gets a second
+  # look instead of falling through to starting a fresh watcher.
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT="$(fm_test_budget 1)" "$WATCH_ARM" --restart > "$out" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do

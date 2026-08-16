@@ -653,11 +653,22 @@ SH
   pass "valid direct and merge flows record exact metadata and reject multiline head metadata"
 }
 
+# Both bounds below are tripwires, not waits: a healthy cycle reaches its control
+# check and exits far inside either one, so lengthening them costs nothing on the
+# passing path and only changes how long a genuinely wedged cycle takes to fail.
+# They are host-derived because a 1-second budget for a whole authenticated state
+# check is comfortably enough on a developer machine and marginal on a 4-vCPU
+# hosted runner, where the check's own process group must also be signalled and
+# reaped inside it. The cycle bound keeps its 10x ratio over the check bound.
+WATCHER_CHECK_TIMEOUT=$(fm_test_budget 1)
+WATCHER_CYCLE_BOUND=$((WATCHER_CHECK_TIMEOUT * 10))
+
 run_watcher_bounded() {
   local home=$1 fakebin=$2 check_interval=${FM_TEST_CHECK_INTERVAL:-0} watch_root=${FM_TEST_WATCH_ROOT:-$ROOT}
   shift 2
-  perl -e 'my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm 10; waitpid $pid, 0; alarm 0; exit($? >> 8)' \
-    env FM_HOME="$home" FM_ROOT_OVERRIDE="$watch_root" FM_CHECK_INTERVAL="$check_interval" FM_CHECK_TIMEOUT=1 \
+  perl -e 'my $t = shift; my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm $t; waitpid $pid, 0; alarm 0; exit($? >> 8)' \
+    "$WATCHER_CYCLE_BOUND" \
+    env FM_HOME="$home" FM_ROOT_OVERRIDE="$watch_root" FM_CHECK_INTERVAL="$check_interval" FM_CHECK_TIMEOUT="$WATCHER_CHECK_TIMEOUT" \
       FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 PATH="$fakebin:$BASE_PATH" "$WATCH" "$@"
 }
 
@@ -3174,7 +3185,11 @@ test_external_merge_transition_retires_only_terminal_poll() {
     esac
     rc=$?
     set -e
-    [ "$rc" -eq 0 ] || fail "$label watcher cycle failed: $(cat "$dir/$label.err")"
+    # Report the exit status and stdout too. This cycle exits non-zero from
+    # several silent paths, so stderr alone once reported a bare
+    # "open-red watcher cycle failed:" with nothing after the colon and no way
+    # to tell a bound that elapsed (124) from a check that refused (1).
+    [ "$rc" -eq 0 ] || fail "$label watcher cycle failed (exit $rc)"$'\n'"--- stderr ---"$'\n'"$(cat "$dir/$label.err")"$'\n'"--- stdout ---"$'\n'"$(cat "$dir/$label.out")"
     case "$(cat "$dir/$label.out")" in check:*z-stop.check.sh:*stop-cycle) ;; *) fail "$label did not reach the control check" ;; esac
     [ "$(poll_artifact_snapshot "$state" task-a)" = "$before" ] || fail "$label changed the armed poll"
     ack_watcher_cycle "$state" || fail "$label control wake acknowledgement failed"
