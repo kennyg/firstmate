@@ -18,9 +18,12 @@
 #
 # The popup-settle is the FIRST sleep recorded: fm_tmux_submit_core types the text,
 # then `sleep "$settle"`, then the Enter-retry loop (sleep 0.4 each) and finally
-# fm-send's own post-submit FM_SEND_SETTLE pause. So tail-vs-head matters: this
+# fm-send's own post-submit FM_SEND_SETTLE wait. So tail-vs-head matters: this
 # suite asserts on the HEAD sleep, distinct from fm-send-settle.test.sh which pins
-# the TAIL (post-submit) pause. The retried Enter in fm_tmux_submit_core remains the
+# the TAIL (post-submit) wait. Every case here runs with FM_SEND_SETTLE=0, so the
+# post-submit wait is disabled outright and the bounded poll cannot perturb the
+# head sleep this suite measures - which is why the poll needed no renegotiation
+# here. The retried Enter in fm_tmux_submit_core remains the
 # real safety net; this settle is only the optimization that lets the popup clear so
 # the first Enter lands.
 #
