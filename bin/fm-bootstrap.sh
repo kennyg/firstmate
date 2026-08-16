@@ -778,8 +778,8 @@ manual_install_url() {
 }
 
 # A declinable tool whose fallback holds only under a condition is declinable
-# only while that condition actually holds in THIS home, so the rationale beside
-# DECLINABLE_TOOLS is enforced rather than assumed. Prints the reason and returns
+# only while that condition actually holds in THIS home, so the documented
+# rationale is enforced rather than assumed. Prints the reason and returns
 # 0 when the declination must be refused, and returns 1 when it may be honored.
 declination_blocked_reason() {  # <tool>
   case "$1" in
@@ -846,21 +846,10 @@ fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 
 # Declinable set for config/optional-tools. A tool belongs here only where
-# firstmate has a real fallback or degraded path: gh-axi and chrome-devtools-axi
-# gate GitHub and browser convenience work rather than any lifecycle step,
-# lavish-axi is explicitly the optional visual surface for decisions plain chat
-# already carries (AGENTS.md section 9), tasks-axi has the declared
-# config/backlog-backend=manual fallback for firstmate's own routine backlog
-# editing while its other callers stay broken while it is absent, which
-# docs/configuration.md "Declined optional tools" records in full, and quota-axi's
-# heaviest read is resolving a crew-dispatch profile array, which a home without
-# config/crew-dispatch.json never has - declination_blocked_reason above ENFORCES
-# that last condition, so a home that does have dispatch profiles is told rather
-# than silenced, while the same docs section records the harness-adapters auth
-# read that condition does not cover. node, git, gh, jq, no-mistakes, and the
-# resolved backend's own required tools break safety or core operation when
-# absent, so they are never declinable and naming one is a reported
-# configuration error.
+# firstmate has a real fallback or degraded path. docs/configuration.md
+# "Declined optional tools" owns the per-tool rationale, the never-declinable
+# set, the conditions declination_blocked_reason enforces, and what a declination
+# still leaves broken.
 DECLINABLE_TOOLS="gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
 DECLINED_TOOLS=""
 
