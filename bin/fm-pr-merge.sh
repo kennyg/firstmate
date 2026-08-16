@@ -4,12 +4,16 @@
 # The full canonical GitHub PR URL is parsed by bin/fm-pr-lib.sh and the derived
 # owner/repository and PR number are passed to the GitHub CLI as separate
 # arguments. The CLI is gh-axi when it is installed and plain gh otherwise;
-# both accept `pr merge <number> --repo <owner>/<repo>` identically, so neither
-# is mandatory and a home with only one of them still merges through this guard.
+# both accept the arguments this script itself constructs - the PR number,
+# --repo <owner>/<repo>, and the default --squash - so neither is mandatory and
+# a home with only one of them still merges through this guard.
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
-# --merge, --rebase, or --method after the optional -- separator. Extra args
-# must not include --repo or -R because the repository comes only from the URL.
+# --merge, --rebase, their -s/-m/-r short forms, or --method after the optional
+# -- separator. --method and --method=<value> are a gh-axi-only spelling, so a
+# caller passing extra merge flags after -- must pass flags the resolved CLI
+# actually accepts. Extra args must not include --repo or -R because the
+# repository comes only from the URL.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra pr merge args>]
 set -eu
 
@@ -46,7 +50,7 @@ caller_has_merge_method() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --squash|--merge|--rebase|--method|--method=*) return 0 ;;
+      --squash|--merge|--rebase|-s|-m|-r|--method|--method=*) return 0 ;;
     esac
   done
   return 1

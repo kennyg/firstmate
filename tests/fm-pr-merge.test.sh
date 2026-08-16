@@ -17,6 +17,7 @@
 #   (i) plain gh merges with the same arguments when gh-axi is not installed
 #   (j) gh-axi still wins when both CLIs are installed
 #   (k) with neither CLI installed the refusal names both and merges nothing
+#   (l) plain gh's -s/-m/-r short forms count as an explicit merge method
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -375,6 +376,28 @@ test_gh_fallback_forwards_explicit_merge_args() {
   pass "fm-pr-merge forwards caller merge args unchanged when falling back to plain gh"
 }
 
+test_gh_fallback_short_merge_methods_not_overridden() {
+  local case_dir short pr head
+  pr=35
+  for short in -m -s -r; do
+    head=$(printf '%040d' "$pr")
+    case_dir=$(make_case "gh-fallback-short${short}")
+    mkdir -p "$case_dir/wt"
+    add_gh_only_mock "$case_dir" "$head"
+    : > "$case_dir/gh.log"
+
+    run_pr_merge_isolated_path "$case_dir" task-x1 \
+      "https://github.com/example/repo/pull/$pr" -- "$short" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "gh-fallback-short: fm-pr-merge failed for caller $short"
+
+    grep -qxF "pr merge $pr --repo example/repo $short" "$case_dir/gh.log" \
+      || fail "gh-fallback-short: caller $short was not forwarded to plain gh without an extra default --squash"
+    pr=$((pr + 1))
+  done
+  pass "fm-pr-merge treats plain gh's -s/-m/-r short forms as explicit merge methods"
+}
+
 test_gh_axi_preferred_when_both_installed() {
   local case_dir
   case_dir=$(make_case gh-axi-preferred)
@@ -436,5 +459,6 @@ test_method_equals_merge_method_not_overridden
 test_parses_pr_url_for_gh_axi
 test_falls_back_to_plain_gh_without_gh_axi
 test_gh_fallback_forwards_explicit_merge_args
+test_gh_fallback_short_merge_methods_not_overridden
 test_gh_axi_preferred_when_both_installed
 test_no_github_cli_refuses_actionably
