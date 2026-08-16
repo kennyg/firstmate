@@ -2,12 +2,19 @@
 # Merge a task's PR after recording pr= and any available pr_head= through
 # bin/fm-pr-check.sh, so teardown can verify landed work after squash merges.
 # The full canonical GitHub PR URL is parsed by bin/fm-pr-lib.sh and the derived
-# owner/repository and PR number are passed to gh-axi as separate arguments.
+# owner/repository and PR number are passed to the GitHub CLI as separate
+# arguments. The CLI is gh-axi when it is installed and plain gh otherwise;
+# both accept the arguments this script itself constructs - the PR number,
+# --repo <owner>/<repo>, and the default --squash - so neither is mandatory and
+# a home with only one of them still merges through this guard.
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
-# --merge, --rebase, or --method after the optional -- separator. Extra args
-# must not include --repo or -R because the repository comes only from the URL.
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
+# --merge, --rebase, their -s/-m/-r short forms, or --method after the optional
+# -- separator. --method and --method=<value> are a gh-axi-only spelling, so a
+# caller passing extra merge flags after -- must pass flags the resolved CLI
+# actually accepts. Extra args must not include --repo or -R because the
+# repository comes only from the URL.
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra pr merge args>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,7 +50,7 @@ caller_has_merge_method() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --squash|--merge|--rebase|--method|--method=*) return 0 ;;
+      --squash|--merge|--rebase|-s|-m|-r|--method|--method=*) return 0 ;;
     esac
   done
   return 1
@@ -81,4 +88,20 @@ if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+# gh-axi is preferred when present, but it is optional tooling: plain gh takes
+# the same `pr merge <number> --repo <owner>/<repo>` arguments, so a home
+# without gh-axi merges through this guard instead of dying on a missing
+# command after the recording above has already run.
+GH_CLI=
+for candidate in gh-axi gh; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    GH_CLI=$candidate
+    break
+  fi
+done
+if [ -z "$GH_CLI" ]; then
+  echo "error: no GitHub CLI found: install gh-axi or gh, then authenticate it" >&2
+  exit 1
+fi
+
+"$GH_CLI" pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"

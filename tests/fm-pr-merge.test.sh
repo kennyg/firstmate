@@ -14,6 +14,10 @@
 #   (f) malformed PR URL fails fast without calling gh-axi
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
+#   (i) plain gh merges with the same arguments when gh-axi is not installed
+#   (j) gh-axi still wins when both CLIs are installed
+#   (k) with neither CLI installed the refusal names both and merges nothing
+#   (l) plain gh's -s/-m/-r short forms count as an explicit merge method
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -22,6 +26,9 @@ fm_git_identity fmtest fmtest@example.invalid
 
 PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pr-merge-tests)
+# A portable system tail with neither CLI on it, so a case can decide exactly
+# which of gh-axi and gh exists no matter what the developer has installed.
+BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
 # Build a fresh sandbox for one test case: a state dir with a task meta and a
 # fakebin with a gh-axi mock that records how it was invoked. Echoes the case dir.
@@ -82,6 +89,82 @@ SH
 exit 0
 SH
   chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+}
+
+# gh mock that logs every invocation the same way the gh-axi mock does and
+# answers fm-pr-check.sh's headRefOid lookup. Used for the cases that install
+# no gh-axi at all. Args: case_dir head_sha
+add_gh_only_mock() {
+  local case_dir=$1 head=$2
+  cat > "$case_dir/fakebin/gh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$FM_TEST_GH_LOG"
+case "\${1:-} \${2:-}" in
+  "pr view")
+    case " \$* " in
+      *headRefOid*) printf '%s\n' '$head' ; exit 0 ;;
+    esac
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/gh"
+}
+
+# Run fm-pr-merge.sh with a PATH that contains only the case's fakebin and a
+# portable system tail, so the case controls which GitHub CLI is installed.
+# Build a system tail that provably ships neither GitHub CLI, by mirroring
+# BASE_PATH into a directory of symlinks with gh and gh-axi left out. The tail
+# itself cannot be assumed CLI-free: GitHub-hosted Linux runners ship real gh
+# in /usr/bin, so a case that only omits its own mocks would silently exercise
+# the runner's gh instead of the neither-installed refusal. Echoes the dir.
+make_cli_free_tail() {
+  local case_dir=$1 tail_dir dir entry name
+  tail_dir="$case_dir/cli-free-tail"
+  mkdir -p "$tail_dir"
+  local IFS=:
+  for dir in $BASE_PATH; do
+    unset IFS
+    [ -d "$dir" ] || continue
+    for entry in "$dir"/*; do
+      name=${entry##*/}
+      case "$name" in gh|gh-axi) continue ;; esac
+      [ -e "$tail_dir/$name" ] || ln -s "$entry" "$tail_dir/$name" 2>/dev/null || true
+    done
+    IFS=:
+  done
+  unset IFS
+  printf '%s\n' "$tail_dir"
+}
+
+# Fail loudly when a case that means to test the neither-installed refusal can
+# still reach a GitHub CLI, so a host-layout surprise reads as a broken
+# precondition rather than as a fallback regression. Args: label path
+assert_no_github_cli_on_path() {
+  local label=$1 probe_path=$2 found
+  for found in gh-axi gh; do
+    if PATH="$probe_path" command -v "$found" >/dev/null 2>&1; then
+      fail "$label: precondition failed, $found is still reachable at $(PATH="$probe_path" command -v "$found")"
+    fi
+  done
+  # The suite runs under set -e, so a probe that correctly found nothing must
+  # not leave this helper returning the last command's non-zero status.
+  return 0
+}
+
+# The system tail run_pr_merge_isolated_path appends after the case's fakebin.
+# A case that must reach no GitHub CLI at all overrides it with the mirrored
+# tail from make_cli_free_tail.
+PR_MERGE_TAIL=$BASE_PATH
+
+run_pr_merge_isolated_path() {
+  local case_dir=$1; shift
+  FM_ROOT_OVERRIDE="$ROOT" \
+  FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_TEST_GH_AXI_LOG="$case_dir/gh-axi.log" \
+  FM_TEST_GH_LOG="$case_dir/gh.log" \
+  PATH="$case_dir/fakebin:$PR_MERGE_TAIL" \
+    "$PR_MERGE" "$@"
 }
 
 run_pr_merge() {
@@ -301,6 +384,120 @@ test_parses_pr_url_for_gh_axi() {
   pass "fm-pr-merge parses a GitHub PR URL into gh-axi number and --repo arguments"
 }
 
+test_falls_back_to_plain_gh_without_gh_axi() {
+  local case_dir
+  case_dir=$(make_case gh-fallback)
+  mkdir -p "$case_dir/wt"
+  add_gh_only_mock "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  : > "$case_dir/gh.log"
+
+  run_pr_merge_isolated_path "$case_dir" task-x1 https://github.com/example/repo/pull/31 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "gh-fallback: fm-pr-merge failed with gh-axi absent and gh present"
+
+  assert_grep 'pr=https://github.com/example/repo/pull/31' "$case_dir/state/task-x1.meta" \
+    "gh-fallback: pr= was not recorded"
+  assert_grep 'pr_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$case_dir/state/task-x1.meta" \
+    "gh-fallback: pr_head= was not recorded"
+  grep -qxF 'pr merge 31 --repo example/repo --squash' "$case_dir/gh.log" \
+    || fail "gh-fallback: plain gh was not invoked with number, --repo, and default --squash"
+  pass "fm-pr-merge merges through plain gh when gh-axi is not installed"
+}
+
+test_gh_fallback_forwards_explicit_merge_args() {
+  local case_dir
+  case_dir=$(make_case gh-fallback-args)
+  mkdir -p "$case_dir/wt"
+  add_gh_only_mock "$case_dir" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  : > "$case_dir/gh.log"
+
+  run_pr_merge_isolated_path "$case_dir" task-x1 https://github.com/example/repo/pull/32 -- --merge --delete-branch \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "gh-fallback-args: fm-pr-merge failed"
+
+  grep -qxF 'pr merge 32 --repo example/repo --merge --delete-branch' "$case_dir/gh.log" \
+    || fail "gh-fallback-args: caller args were not forwarded to plain gh without an extra default --squash"
+  pass "fm-pr-merge forwards caller merge args unchanged when falling back to plain gh"
+}
+
+test_gh_fallback_short_merge_methods_not_overridden() {
+  local case_dir short pr head
+  pr=35
+  for short in -m -s -r; do
+    head=$(printf '%040d' "$pr")
+    case_dir=$(make_case "gh-fallback-short${short}")
+    mkdir -p "$case_dir/wt"
+    add_gh_only_mock "$case_dir" "$head"
+    : > "$case_dir/gh.log"
+
+    run_pr_merge_isolated_path "$case_dir" task-x1 \
+      "https://github.com/example/repo/pull/$pr" -- "$short" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "gh-fallback-short: fm-pr-merge failed for caller $short"
+
+    grep -qxF "pr merge $pr --repo example/repo $short" "$case_dir/gh.log" \
+      || fail "gh-fallback-short: caller $short was not forwarded to plain gh without an extra default --squash"
+    pr=$((pr + 1))
+  done
+  pass "fm-pr-merge treats plain gh's -s/-m/-r short forms as explicit merge methods"
+}
+
+test_gh_axi_preferred_when_both_installed() {
+  local case_dir
+  case_dir=$(make_case gh-axi-preferred)
+  mkdir -p "$case_dir/wt"
+  add_gh_only_mock "$case_dir" cccccccccccccccccccccccccccccccccccccccc
+  cat > "$case_dir/fakebin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/gh-axi"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  run_pr_merge_isolated_path "$case_dir" task-x1 https://github.com/example/repo/pull/34 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "gh-axi-preferred: fm-pr-merge failed"
+
+  grep -qxF 'pr merge 34 --repo example/repo --squash' "$case_dir/gh-axi.log" \
+    || fail "gh-axi-preferred: gh-axi did not receive the merge when both CLIs are installed"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "gh-axi-preferred: plain gh was used for the merge even though gh-axi is installed"
+  pass "fm-pr-merge still merges through gh-axi when both CLIs are installed"
+}
+
+test_no_github_cli_refuses_actionably() {
+  local case_dir rc
+  case_dir=$(make_case no-github-cli)
+  mkdir -p "$case_dir/wt"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  # This case is the only one that must reach neither CLI, so it runs against a
+  # mirrored system tail with both removed and asserts that before merging.
+  local saved_tail=$PR_MERGE_TAIL
+  PR_MERGE_TAIL=$(make_cli_free_tail "$case_dir")
+  assert_no_github_cli_on_path no-github-cli "$case_dir/fakebin:$PR_MERGE_TAIL"
+
+  set +e
+  run_pr_merge_isolated_path "$case_dir" task-x1 https://github.com/example/repo/pull/33 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  PR_MERGE_TAIL=$saved_tail
+
+  expect_code 1 "$rc" "no-github-cli: fm-pr-merge should refuse when neither CLI is installed"
+  assert_grep 'gh-axi' "$case_dir/stderr" \
+    "no-github-cli: refusal did not name gh-axi"
+  grep -Eq '(^|[^-])gh([^-a-z]|$)' "$case_dir/stderr" \
+    || fail "no-github-cli: refusal did not name plain gh as well as gh-axi"
+  assert_no_grep 'command not found' "$case_dir/stderr" \
+    "no-github-cli: refusal degraded into a bare command-not-found"
+  [ ! -s "$case_dir/gh.log" ] || fail "no-github-cli: a merge was attempted"
+  pass "fm-pr-merge refuses actionably when neither gh-axi nor gh is installed"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -311,3 +508,8 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_parses_pr_url_for_gh_axi
+test_falls_back_to_plain_gh_without_gh_axi
+test_gh_fallback_forwards_explicit_merge_args
+test_gh_fallback_short_merge_methods_not_overridden
+test_gh_axi_preferred_when_both_installed
+test_no_github_cli_refuses_actionably
