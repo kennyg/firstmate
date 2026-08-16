@@ -113,13 +113,57 @@ SH
 
 # Run fm-pr-merge.sh with a PATH that contains only the case's fakebin and a
 # portable system tail, so the case controls which GitHub CLI is installed.
+# Build a system tail that provably ships neither GitHub CLI, by mirroring
+# BASE_PATH into a directory of symlinks with gh and gh-axi left out. The tail
+# itself cannot be assumed CLI-free: GitHub-hosted Linux runners ship real gh
+# in /usr/bin, so a case that only omits its own mocks would silently exercise
+# the runner's gh instead of the neither-installed refusal. Echoes the dir.
+make_cli_free_tail() {
+  local case_dir=$1 tail_dir dir entry name
+  tail_dir="$case_dir/cli-free-tail"
+  mkdir -p "$tail_dir"
+  local IFS=:
+  for dir in $BASE_PATH; do
+    unset IFS
+    [ -d "$dir" ] || continue
+    for entry in "$dir"/*; do
+      name=${entry##*/}
+      case "$name" in gh|gh-axi) continue ;; esac
+      [ -e "$tail_dir/$name" ] || ln -s "$entry" "$tail_dir/$name" 2>/dev/null || true
+    done
+    IFS=:
+  done
+  unset IFS
+  printf '%s\n' "$tail_dir"
+}
+
+# Fail loudly when a case that means to test the neither-installed refusal can
+# still reach a GitHub CLI, so a host-layout surprise reads as a broken
+# precondition rather than as a fallback regression. Args: label path
+assert_no_github_cli_on_path() {
+  local label=$1 probe_path=$2 found
+  for found in gh-axi gh; do
+    if PATH="$probe_path" command -v "$found" >/dev/null 2>&1; then
+      fail "$label: precondition failed, $found is still reachable at $(PATH="$probe_path" command -v "$found")"
+    fi
+  done
+  # The suite runs under set -e, so a probe that correctly found nothing must
+  # not leave this helper returning the last command's non-zero status.
+  return 0
+}
+
+# The system tail run_pr_merge_isolated_path appends after the case's fakebin.
+# A case that must reach no GitHub CLI at all overrides it with the mirrored
+# tail from make_cli_free_tail.
+PR_MERGE_TAIL=$BASE_PATH
+
 run_pr_merge_isolated_path() {
   local case_dir=$1; shift
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_TEST_GH_AXI_LOG="$case_dir/gh-axi.log" \
   FM_TEST_GH_LOG="$case_dir/gh.log" \
-  PATH="$case_dir/fakebin:$BASE_PATH" \
+  PATH="$case_dir/fakebin:$PR_MERGE_TAIL" \
     "$PR_MERGE" "$@"
 }
 
@@ -430,11 +474,18 @@ test_no_github_cli_refuses_actionably() {
   : > "$case_dir/gh-axi.log"
   : > "$case_dir/gh.log"
 
+  # This case is the only one that must reach neither CLI, so it runs against a
+  # mirrored system tail with both removed and asserts that before merging.
+  local saved_tail=$PR_MERGE_TAIL
+  PR_MERGE_TAIL=$(make_cli_free_tail "$case_dir")
+  assert_no_github_cli_on_path no-github-cli "$case_dir/fakebin:$PR_MERGE_TAIL"
+
   set +e
   run_pr_merge_isolated_path "$case_dir" task-x1 https://github.com/example/repo/pull/33 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
+  PR_MERGE_TAIL=$saved_tail
 
   expect_code 1 "$rc" "no-github-cli: fm-pr-merge should refuse when neither CLI is installed"
   assert_grep 'gh-axi' "$case_dir/stderr" \
