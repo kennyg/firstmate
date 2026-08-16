@@ -59,12 +59,18 @@
 # refused with --key, with an explicit backend target (no task ledger in this
 # home), and with an empty message.
 #
-# After a successful text submit fm-send pauses FM_SEND_SETTLE seconds (default 1,
-# 0 disables) before returning: submit confirmation only proves the text was
-# accepted, but the harness needs a beat to spin up the turn before its busy
-# footer appears, so an immediate peek would otherwise see the stale idle pane.
-# The pause is fm-send-only; the shared submit core (used by the away-mode daemon,
-# which only needs "submitted") does not pay it, and the --key path is unaffected.
+# After a successful text submit fm-send waits for the receiving turn to become
+# visible before returning: submit confirmation only proves the text was accepted,
+# but the harness needs a beat to spin up the turn before its busy state appears,
+# so an immediate peek would otherwise see the stale idle pane. FM_SEND_SETTLE
+# (default 1, 0 disables) is the CAP on that wait, not a fixed duration: when the
+# target carries recorded metadata, fm-send polls the semantic busy-state contract
+# (bin/fm-busy-lib.sh) and returns as soon as the target reads busy, so an ordinary
+# steer usually pays a fraction of the cap. A target that never reads busy - an
+# explicit session:window target with no metadata, or any unreadable or
+# unclassifiable target - waits the full cap, so the wait can end early but never
+# late. The wait is fm-send-only; the shared submit core (used by the away-mode
+# daemon, which only needs "submitted") does not pay it, and --key is unaffected.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -105,6 +111,8 @@ fi
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh
+. "$SCRIPT_DIR/fm-busy-lib.sh"
 
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/fm-guard.sh" || true
 
@@ -143,6 +151,56 @@ fm_send_normalize_key() {  # <key>
     Escape|escape|Esc|esc) printf '%s' Escape ;;
     *) printf '%s' "$1" ;;
   esac
+}
+
+# fm_send_post_submit_settle: wait for the receiving turn to become visible.
+# FM_SEND_SETTLE is the cap on the wait, never a required duration. When the
+# target carries recorded metadata, poll the semantic busy-state contract
+# (bin/fm-busy-lib.sh) and return the moment the target reads busy. An explicit
+# session:window target with no metadata has no recorded harness to classify, so
+# there is no predicate to poll and it keeps the fixed wait. fm_busy_is_busy
+# never promotes unknown to busy, so an unreadable or unclassifiable target also
+# waits the full cap: this can return earlier than the cap, never later.
+fm_send_post_submit_settle() {
+  local cap=${FM_SEND_SETTLE:-1} id interval timer probes busy_seen n
+  [ "$cap" != 0 ] || return 0
+  if [ -z "$TARGET_META" ]; then
+    sleep "$cap"
+    return 0
+  fi
+  # A cap that is not a plain positive number has no poll schedule; hand it
+  # straight to sleep so the caller sees exactly the behavior it saw before.
+  case $cap in
+    ''|*[!0-9.]*) sleep "$cap"; return 0 ;;
+  esac
+  interval=$(awk -v cap="$cap" 'BEGIN { if (cap <= 0) exit 1; print (cap < 0.1 ? cap : 0.1) }') \
+    || { sleep "$cap"; return 0; }
+  id=$(fm_send_id_from_meta "$TARGET_META")
+  if fm_busy_is_busy "$TARGET_BACKEND" "$T" "$TARGET_HARNESS" "$id" "$STATE"; then
+    return 0
+  fi
+  # One background `sleep <cap>` IS the deadline, so a target that never reads
+  # busy still costs the single sleep it always did. Probing only covers the
+  # first part of that window and the rest is spent waiting the deadline out:
+  # every probe and every pacing sleep is its own process, so a poll that ran
+  # right up to the deadline would step past it instead of landing on it.
+  probes=$(awk -v cap="$cap" -v iv="$interval" \
+    'BEGIN { n = int(cap * 0.6 / iv); if (n < 1) n = 1; print n }')
+  sleep "$cap" &
+  timer=$!
+  busy_seen=0
+  n=0
+  while [ "$n" -lt "$probes" ] && kill -0 "$timer" 2>/dev/null; do
+    sleep "$interval"
+    if fm_busy_is_busy "$TARGET_BACKEND" "$T" "$TARGET_HARNESS" "$id" "$STATE"; then
+      busy_seen=1
+      break
+    fi
+    n=$((n + 1))
+  done
+  [ "$busy_seen" = 1 ] || wait "$timer" 2>/dev/null || true
+  kill "$timer" 2>/dev/null || true
+  wait "$timer" 2>/dev/null || true
 }
 
 fm_send_record_interrupt() {  # <key>
@@ -544,9 +602,10 @@ else
     fm_send_close_resolved_keys "$RESOLVE_ANSWER_TEXT" || exit 1
   fi
   # Submit landed with exact empty. Confirmation only proves the text was
-  # accepted; the harness still needs a beat to spin up the
-  # turn before its busy footer shows. Pause so an immediate peek catches the
-  # crewmate actually working instead of the stale idle pane. FM_SEND_SETTLE=0
-  # disables it. Scoped to this path only, never the shared submit core.
-  [ "${FM_SEND_SETTLE:-1}" = 0 ] || sleep "${FM_SEND_SETTLE:-1}"
+  # accepted; the harness still needs a beat to spin up the turn before its busy
+  # state shows. Wait so an immediate peek catches the crewmate actually working
+  # instead of the stale idle pane, ending as soon as the turn is provably under
+  # way. FM_SEND_SETTLE=0 disables it. Scoped to this path only, never the
+  # shared submit core.
+  fm_send_post_submit_settle
 fi
