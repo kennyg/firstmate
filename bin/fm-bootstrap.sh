@@ -851,14 +851,16 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 # lavish-axi is explicitly the optional visual surface for decisions plain chat
 # already carries (AGENTS.md section 9), tasks-axi has the declared
 # config/backlog-backend=manual fallback for firstmate's own routine backlog
-# editing with secondmate handoff the residual gap docs/configuration.md
-# "Declined optional tools" records, and quota-axi is read only to resolve a
-# crew-dispatch profile array, which a home without config/crew-dispatch.json
-# never has - declination_blocked_reason above ENFORCES that last condition, so a
-# home that does have dispatch profiles is told rather than silenced. node, git,
-# gh, jq, no-mistakes, and the resolved backend's own required tools break safety
-# or core operation when absent, so they are never declinable and naming one is a
-# reported configuration error.
+# editing with secondmate handoff and remote provisioning the residual gaps
+# docs/configuration.md "Declined optional tools" records, and quota-axi's
+# heaviest read is resolving a crew-dispatch profile array, which a home without
+# config/crew-dispatch.json never has - declination_blocked_reason above ENFORCES
+# that last condition, so a home that does have dispatch profiles is told rather
+# than silenced, while the same docs section records the harness-adapters auth
+# read that condition does not cover. node, git, gh, jq, no-mistakes, and the
+# resolved backend's own required tools break safety or core operation when
+# absent, so they are never declinable and naming one is a reported
+# configuration error.
 DECLINABLE_TOOLS="gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
 DECLINED_TOOLS=""
 
