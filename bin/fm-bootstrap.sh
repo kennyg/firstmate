@@ -777,13 +777,28 @@ manual_install_url() {
   esac
 }
 
+# A declinable tool whose fallback holds only under a condition is declinable
+# only while that condition actually holds in THIS home, so the rationale beside
+# DECLINABLE_TOOLS is enforced rather than assumed. Prints the reason and returns
+# 0 when the declination must be refused, and returns 1 when it may be honored.
+declination_blocked_reason() {  # <tool>
+  case "$1" in
+    quota-axi)
+      [ -f "$CONFIG/crew-dispatch.json" ] || return 1
+      echo "'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove config/crew-dispatch.json or install quota-axi"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # config/optional-tools (LOCAL, gitignored): one declined tool per non-empty,
 # non-comment line, same line shape as config/wedge-alarm. Sets DECLINED_TOOLS to
 # the honored names and prints an OPTIONAL_TOOLS diagnostic for every other name,
-# so a typo or a tool this home genuinely needs is reported instead of silently
-# honored or silently dropped. An absent file declines nothing.
+# so a typo, a tool this home genuinely needs, or a conditional declination whose
+# condition does not hold here is reported instead of silently honored or
+# silently dropped. An absent file declines nothing.
 optional_tools_load() {
-  local file line
+  local file line reason
   file="$CONFIG/optional-tools"
   [ -f "$file" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -795,6 +810,8 @@ optional_tools_load() {
       echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is required by the $BACKEND backend and cannot be declined"
     elif ! fm_backend_list_contains "$DECLINABLE_TOOLS" "$line"; then
       echo "OPTIONAL_TOOLS: invalid config/optional-tools - '$line' is not declinable (declinable: $DECLINABLE_TOOLS)"
+    elif reason=$(declination_blocked_reason "$line"); then
+      echo "OPTIONAL_TOOLS: invalid config/optional-tools - $reason"
     else
       DECLINED_TOOLS="$DECLINED_TOOLS $line"
     fi
@@ -835,9 +852,11 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 # already carries (AGENTS.md section 9), tasks-axi has the declared
 # config/backlog-backend=manual fallback, and quota-axi is read only to resolve a
 # crew-dispatch profile array, which a home without config/crew-dispatch.json
-# never has. node, git, gh, jq, no-mistakes, and the resolved backend's own
-# required tools break safety or core operation when absent, so they are never
-# declinable and naming one is a reported configuration error.
+# never has - declination_blocked_reason above ENFORCES that last condition, so a
+# home that does have dispatch profiles is told rather than silenced. node, git,
+# gh, jq, no-mistakes, and the resolved backend's own required tools break safety
+# or core operation when absent, so they are never declinable and naming one is a
+# reported configuration error.
 DECLINABLE_TOOLS="gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
 DECLINED_TOOLS=""
 

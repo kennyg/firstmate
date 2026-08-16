@@ -305,7 +305,7 @@ Orca provides both the task worktree and terminal endpoint (see "Runtime backend
 A herdr, zellij, or cmux home is therefore never told `tmux` is missing, and the `treehouse` durable-lease upgrade check runs only for the backends that actually use treehouse.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
-`tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`.
+`tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`, unless declined through `config/optional-tools` below.
 An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm install -g tasks-axi)`; when `config/backlog-backend` is not `manual` and compatible `tasks-axi` is on `PATH`, bootstrap stays silent and firstmate uses its verbs for routine backlog mutations, otherwise it hand-edits `data/backlog.md` until installation is approved and completed.
 An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)`.
 An absent or incompatible `lavish-axi` reports `MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)`.
@@ -327,7 +327,7 @@ When a running home advances and its loaded instruction surface (`AGENTS.md`, `b
 If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_SECONDMATES:` with the failure reason.
 The same bootstrap run emits `SECONDMATE_LIVENESS:` only when a registered secondmate is skipped or its relaunch fails; already-live and successfully relaunched secondmates are handled silently.
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/fm-config-push.sh`.
-It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `optional-tools`, `startup-memory-budget`, `trace-context`, and `data/captain-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
+It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, `optional-tools`, and `data/captain-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
 When an allowlisted config item changes for an already-running local home, it sends the literal-content reread pointer described in [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
 A changed remote home instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
 The locked bootstrap inheritance pass uses the same placement-specific behavior; see `secondmate-provisioning` for the single contract owner.
@@ -340,10 +340,11 @@ The local, gitignored `config/optional-tools` file declares tools you have consc
 Write one tool name per line; blank lines, surrounding whitespace, and `#` comment lines are ignored, and an absent file declines nothing.
 
 Only genuinely optional tools may be declined, because each of them has a real fallback or degraded path: `gh-axi` and `chrome-devtools-axi` gate GitHub and browser convenience work rather than any lifecycle step, `lavish-axi` is the optional visual surface for decisions plain chat already carries, `tasks-axi` has the `config/backlog-backend=manual` fallback described above, and `quota-axi` is read only to resolve a crew-dispatch profile array, which a home with no `config/crew-dispatch.json` never has.
+That last condition is enforced rather than assumed: while this home has a `config/crew-dispatch.json`, a `quota-axi` declination is refused and reported instead of honored, so clear it by removing the dispatch profiles or installing `quota-axi`.
 `node`, `git`, `gh`, `jq`, `no-mistakes`, and the resolved backend's own required tools break safety or core operation when absent, so they can never be declined.
 [`bin/fm-bootstrap.sh`](../bin/fm-bootstrap.sh) owns the declinable set.
 
-Naming anything else, including a typo or a tool the resolved backend requires, reports `OPTIONAL_TOOLS: invalid config/optional-tools - <reason>` and is never honored, so declination cannot silence a tool this home actually needs.
+Naming anything else, including a typo, a tool the resolved backend requires, or a conditional declination whose condition does not hold here, reports `OPTIONAL_TOOLS: invalid config/optional-tools - <reason>` and is never honored, so declination cannot silence a tool this home actually needs.
 Declination covers absence only: an installed tool below its version floor still reports `MISSING:`, because installing a tool is not declining it.
 The file is inherited by secondmate homes like the other local operating choices above, and each home re-resolves the non-declinable set against its own backend, so an inherited name that home requires is reported there rather than honored.
 
