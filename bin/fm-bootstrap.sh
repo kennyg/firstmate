@@ -785,7 +785,7 @@ declination_blocked_reason() {  # <tool>
   case "$1" in
     quota-axi)
       [ -f "$CONFIG/crew-dispatch.json" ] || return 1
-      echo "'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove config/crew-dispatch.json or install quota-axi"
+      echo "'quota-axi' cannot be declined while config/crew-dispatch.json exists, because resolving a dispatch profile array reads it; remove the quota-axi line from config/optional-tools, install quota-axi, or remove config/crew-dispatch.json"
       ;;
     *) return 1 ;;
   esac
